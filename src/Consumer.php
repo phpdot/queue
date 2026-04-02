@@ -216,7 +216,7 @@ final class Consumer
             return;
         }
 
-        $amqpMsg->nack(true);
+        $amqpMsg->nack(false);
 
         if ($this->onRetryCallback !== null) {
             ($this->onRetryCallback)($message);
@@ -240,8 +240,24 @@ final class Consumer
     {
         $amqpMsg->ack();
 
+        $dlxExchange = $this->topology->getDeadLetterExchange($this->queue);
+
+        if ($dlxExchange === null) {
+            $this->logger->warning('No dead letter exchange configured, message discarded', [
+                'queue' => $this->queue,
+                'message_id' => $message->messageId(),
+                'reason' => $reason,
+            ]);
+
+            if ($this->onDeadCallback !== null) {
+                ($this->onDeadCallback)($message);
+            }
+
+            return;
+        }
+
+        $dlxRoutingKey = $this->topology->getDeadLetterRoutingKey($this->queue);
         $channel = $this->connection->getChannel();
-        $retryExchange = $this->queue . '.retry.exchange';
 
         $headers = $message->headers();
         $headers['x-failed-queue'] = $this->queue;
@@ -261,7 +277,7 @@ final class Consumer
         }
 
         $deadMessage = new AMQPMessage($amqpMsg->getBody(), $properties);
-        $channel->basic_publish($deadMessage, $retryExchange, $this->queue);
+        $channel->basic_publish($deadMessage, $dlxExchange, $dlxRoutingKey !== '' ? $dlxRoutingKey : $this->queue);
 
         if ($this->onDeadCallback !== null) {
             ($this->onDeadCallback)($message);

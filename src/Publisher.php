@@ -175,12 +175,7 @@ final class Publisher
             }
 
             if (!isset($msgProperties['content_type'])) {
-                json_decode($body);
-                if (json_last_error() === JSON_ERROR_NONE) {
-                    $msgProperties['content_type'] = 'application/json';
-                } else {
-                    $msgProperties['content_type'] = 'text/plain';
-                }
+                $msgProperties['content_type'] = json_validate($body) ? 'application/json' : 'text/plain';
             }
 
             if ($this->priority !== null) {

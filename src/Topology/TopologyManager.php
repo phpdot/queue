@@ -62,10 +62,10 @@ final class TopologyManager
 
         $channel->exchange_declare(
             $exchange,
-            $exchangeConfig['type'],
+            $this->extractString($exchangeConfig['type'] ?? 'direct'),
             false,
-            $exchangeConfig['durable'] ?? true,
-            $exchangeConfig['auto_delete'] ?? false,
+            $this->extractBool($exchangeConfig['durable'] ?? true),
+            $this->extractBool($exchangeConfig['auto_delete'] ?? false),
         );
 
         $this->declaredExchanges[$exchange] = true;
@@ -73,13 +73,21 @@ final class TopologyManager
         foreach ($this->config->queues as $queueName => $queueConfig) {
             $bindings = $queueConfig['bindings'] ?? [];
 
+            if (!is_array($bindings)) {
+                continue;
+            }
+
             foreach ($bindings as $binding) {
-                if ($binding['exchange'] === $exchange) {
-                    $this->declareQueue($queueName, $queueConfig, $channel);
+                if (!is_array($binding)) {
+                    continue;
+                }
+
+                if (($binding['exchange'] ?? '') === $exchange) {
+                    $this->declareQueue($queueName, $this->normalizeQueueConfig($queueConfig), $channel);
                     $channel->queue_bind(
                         $queueName,
                         $exchange,
-                        $binding['routing_key'] ?? '',
+                        $this->extractString($binding['routing_key'] ?? ''),
                     );
                 }
             }
@@ -109,22 +117,47 @@ final class TopologyManager
 
         $queueConfig = $this->config->queues[$queue];
 
-        $this->declareQueue($queue, $queueConfig, $channel);
+        $retryRaw = $queueConfig['retry'] ?? [];
+        /** @var array<string, mixed> $retryConfig */
+        $retryConfig = is_array($retryRaw) ? $retryRaw : [];
+        $retryEnabled = $this->extractBool($retryConfig['enable'] ?? false);
+
+        $normalizedConfig = $this->normalizeQueueConfig($queueConfig);
+
+        if ($retryEnabled) {
+            $this->declareRetryInfrastructure($queue, $this->normalizeRetryConfig($retryConfig), $channel);
+
+            $existingArguments = $normalizedConfig['arguments'] ?? [];
+            $normalizedConfig['arguments'] = array_merge($existingArguments, [
+                'x-dead-letter-exchange' => $queue . '.retry.exchange',
+                'x-dead-letter-routing-key' => $queue,
+            ]);
+        }
+
+        $this->declareQueue($queue, $normalizedConfig, $channel);
 
         $bindings = $queueConfig['bindings'] ?? [];
 
+        if (!is_array($bindings)) {
+            $bindings = [];
+        }
+
         foreach ($bindings as $binding) {
-            $exchangeName = $binding['exchange'];
+            if (!is_array($binding)) {
+                continue;
+            }
+
+            $exchangeName = $this->extractString($binding['exchange'] ?? '');
 
             if (!isset($this->declaredExchanges[$exchangeName]) && isset($this->config->exchanges[$exchangeName])) {
                 $exchangeConfig = $this->config->exchanges[$exchangeName];
 
                 $channel->exchange_declare(
                     $exchangeName,
-                    $exchangeConfig['type'],
+                    $this->extractString($exchangeConfig['type'] ?? 'direct'),
                     false,
-                    $exchangeConfig['durable'] ?? true,
-                    $exchangeConfig['auto_delete'] ?? false,
+                    $this->extractBool($exchangeConfig['durable'] ?? true),
+                    $this->extractBool($exchangeConfig['auto_delete'] ?? false),
                 );
 
                 $this->declaredExchanges[$exchangeName] = true;
@@ -133,15 +166,8 @@ final class TopologyManager
             $channel->queue_bind(
                 $queue,
                 $exchangeName,
-                $binding['routing_key'] ?? '',
+                $this->extractString($binding['routing_key'] ?? ''),
             );
-        }
-
-        $retryConfig = $queueConfig['retry'] ?? [];
-        $retryEnabled = $retryConfig['enabled'] ?? false;
-
-        if ($retryEnabled) {
-            $this->declareRetryInfrastructure($queue, $retryConfig, $channel);
         }
 
         $this->declaredQueues[$queue] = true;
@@ -154,6 +180,155 @@ final class TopologyManager
     {
         $this->declaredExchanges = [];
         $this->declaredQueues = [];
+    }
+
+    /**
+     * Get the dead letter exchange for a queue from config.
+     *
+     * @param string $queue The queue name
+     *
+     * @return string|null The DLX exchange name, or null if not configured
+     */
+    public function getDeadLetterExchange(string $queue): ?string
+    {
+        $queueConfig = $this->config->queues[$queue] ?? [];
+        $dead = $queueConfig['dead'] ?? null;
+
+        if ($dead === null) {
+            return null;
+        }
+
+        if (is_string($dead)) {
+            return $dead;
+        }
+
+        if (is_array($dead) && isset($dead['exchange'])) {
+            $exchange = $dead['exchange'];
+
+            return is_scalar($exchange) ? (string) $exchange : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the dead letter routing key for a queue from config.
+     *
+     * @param string $queue The queue name
+     *
+     * @return string The DLX routing key, or empty string if not configured
+     */
+    public function getDeadLetterRoutingKey(string $queue): string
+    {
+        $queueConfig = $this->config->queues[$queue] ?? [];
+        $dead = $queueConfig['dead'] ?? null;
+
+        if (is_array($dead) && isset($dead['routing_key'])) {
+            $routingKey = $dead['routing_key'];
+
+            return is_scalar($routingKey) ? (string) $routingKey : '';
+        }
+
+        return '';
+    }
+
+    /**
+     * Extracts a string value from a mixed config value.
+     *
+     * @param mixed $value The config value
+     *
+     * @return string The string value, or empty string if not scalar
+     */
+    private function extractString(mixed $value): string
+    {
+        if (is_string($value)) {
+            return $value;
+        }
+
+        return is_scalar($value) ? (string) $value : '';
+    }
+
+    /**
+     * Extracts a bool value from a mixed config value.
+     *
+     * @param mixed $value The config value
+     *
+     * @return bool The bool value
+     */
+    private function extractBool(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return (bool) $value;
+    }
+
+    /**
+     * Extracts an int value from a mixed config value.
+     *
+     * @param mixed $value The config value
+     *
+     * @return int The int value
+     */
+    private function extractInt(mixed $value): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        return is_scalar($value) ? (int) $value : 0;
+    }
+
+    /**
+     * Normalizes a raw queue config array into the expected shape for declareQueue.
+     *
+     * @param array<string, mixed> $raw The raw queue configuration
+     *
+     * @return array{durable?: bool, exclusive?: bool, auto_delete?: bool, arguments?: array<string, mixed>}
+     */
+    private function normalizeQueueConfig(array $raw): array
+    {
+        $normalized = [];
+
+        if (isset($raw['durable'])) {
+            $normalized['durable'] = $this->extractBool($raw['durable']);
+        }
+
+        if (isset($raw['exclusive'])) {
+            $normalized['exclusive'] = $this->extractBool($raw['exclusive']);
+        }
+
+        if (isset($raw['auto_delete'])) {
+            $normalized['auto_delete'] = $this->extractBool($raw['auto_delete']);
+        }
+
+        $arguments = $raw['arguments'] ?? null;
+
+        if (is_array($arguments)) {
+            /** @var array<string, mixed> $arguments */
+            $normalized['arguments'] = $arguments;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Normalizes a raw retry config array into the expected shape for declareRetryInfrastructure.
+     *
+     * @param array<string, mixed> $raw The raw retry configuration
+     *
+     * @return array{delay_ms?: int}
+     */
+    private function normalizeRetryConfig(array $raw): array
+    {
+        $normalized = [];
+
+        if (isset($raw['delay_ms'])) {
+            $normalized['delay_ms'] = $this->extractInt($raw['delay_ms']);
+        }
+
+        return $normalized;
     }
 
     /**

@@ -27,8 +27,8 @@ final readonly class ConnectionConfig
      * @param int $timeoutMs The connection timeout in milliseconds
      * @param int $maxRetries The maximum number of reconnection attempts
      * @param int $retryDelayMs The base delay between retries in milliseconds
-     * @param array<string, array{type: string, durable?: bool, auto_delete?: bool}> $exchanges Exchange definitions keyed by name
-     * @param array<string, array{durable?: bool, exclusive?: bool, auto_delete?: bool, bindings?: array<int, array{exchange: string, routing_key?: string}>, retry?: array{enabled?: bool, max_retries?: int, delay_ms?: int}, arguments?: array<string, mixed>}> $queues Queue definitions keyed by name
+     * @param array<string, array<string, mixed>> $exchanges Exchange definitions keyed by name
+     * @param array<string, array<string, mixed>> $queues Queue definitions keyed by name
      */
     public function __construct(
         public string $host = 'localhost',
