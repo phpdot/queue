@@ -83,7 +83,10 @@ final class TopologyManager
                 }
 
                 if (($binding['exchange'] ?? '') === $exchange) {
-                    $this->declareQueue($queueName, $this->normalizeQueueConfig($queueConfig), $channel);
+                    if (!isset($this->declaredQueues[$queueName])) {
+                        $this->declareQueueWithRetry($queueName, $queueConfig, $channel);
+                    }
+
                     $channel->queue_bind(
                         $queueName,
                         $exchange,
@@ -117,24 +120,7 @@ final class TopologyManager
 
         $queueConfig = $this->config->queues[$queue];
 
-        $retryRaw = $queueConfig['retry'] ?? [];
-        /** @var array<string, mixed> $retryConfig */
-        $retryConfig = is_array($retryRaw) ? $retryRaw : [];
-        $retryEnabled = $this->extractBool($retryConfig['enable'] ?? false);
-
-        $normalizedConfig = $this->normalizeQueueConfig($queueConfig);
-
-        if ($retryEnabled) {
-            $this->declareRetryInfrastructure($queue, $this->normalizeRetryConfig($retryConfig), $channel);
-
-            $existingArguments = $normalizedConfig['arguments'] ?? [];
-            $normalizedConfig['arguments'] = array_merge($existingArguments, [
-                'x-dead-letter-exchange' => $queue . '.retry.exchange',
-                'x-dead-letter-routing-key' => $queue,
-            ]);
-        }
-
-        $this->declareQueue($queue, $normalizedConfig, $channel);
+        $this->declareQueueWithRetry($queue, $queueConfig, $channel);
 
         $bindings = $queueConfig['bindings'] ?? [];
 
@@ -332,6 +318,35 @@ final class TopologyManager
     }
 
     /**
+     * Declares a queue with retry infrastructure if enabled.
+     *
+     * @param string $queue The queue name
+     * @param array<string, mixed> $queueConfig Raw queue configuration
+     * @param AMQPChannel $channel The AMQP channel
+     */
+    private function declareQueueWithRetry(string $queue, array $queueConfig, AMQPChannel $channel): void
+    {
+        $retryRaw = $queueConfig['retry'] ?? [];
+        /** @var array<string, mixed> $retryConfig */
+        $retryConfig = is_array($retryRaw) ? $retryRaw : [];
+        $retryEnabled = $this->extractBool($retryConfig['enable'] ?? false);
+
+        $normalizedConfig = $this->normalizeQueueConfig($queueConfig);
+
+        if ($retryEnabled) {
+            $this->declareRetryInfrastructure($queue, $this->normalizeRetryConfig($retryConfig), $channel);
+
+            $existingArguments = $normalizedConfig['arguments'] ?? [];
+            $normalizedConfig['arguments'] = array_merge($existingArguments, [
+                'x-dead-letter-exchange' => $queue . '.retry.exchange',
+                'x-dead-letter-routing-key' => $queue,
+            ]);
+        }
+
+        $this->declareQueue($queue, $normalizedConfig, $channel);
+    }
+
+    /**
      * Declares a queue on the given channel.
      *
      * @param string $name The queue name
@@ -340,6 +355,8 @@ final class TopologyManager
      */
     private function declareQueue(string $name, array $config, AMQPChannel $channel): void
     {
+        $this->declaredQueues[$name] = true;
+
         $arguments = new AMQPTable($config['arguments'] ?? []);
 
         $channel->queue_declare(
