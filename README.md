@@ -14,7 +14,7 @@ composer require phpdot/queue
 use PHPdot\Queue\Connection;
 use PHPdot\Queue\Config\ConnectionConfig;
 use PHPdot\Queue\Message;
-use PHPdot\Queue\TaskStatus;
+use PHPdot\Queue\Enum\TaskStatus;
 
 $config = new ConnectionConfig(
     host: 'localhost',
@@ -174,7 +174,7 @@ When max retries exceeded or `TaskStatus::DEAD` returned, the message is forward
 After fixing a bug, replay dead-lettered messages back to their original queue. Same callback pattern as consuming — return an enum, the library handles the rest.
 
 ```php
-use PHPdot\Queue\ReplayAction;
+use PHPdot\Queue\Enum\ReplayAction;
 
 $result = $conn->replay('orders.dead')
     ->limit(100)
@@ -320,11 +320,13 @@ src/
 ├── Consumer.php             Message consumer with retry/dead letter
 ├── Replayer.php             Dead letter queue replay
 ├── Message.php              Immutable inbound message DTO
-├── TaskStatus.php           SUCCESS, RETRY, DEAD
-├── ReplayAction.php         REPLAY, REMOVE, SKIP
-├── ReplayResult.php         Replay outcome counts
 ├── Config/
 │   └── ConnectionConfig.php Connection and topology configuration
+├── Enum/
+│   ├── TaskStatus.php       SUCCESS, RETRY, DEAD
+│   └── ReplayAction.php     REPLAY, REMOVE, SKIP
+├── Result/
+│   └── ReplayResult.php     Replay outcome counts
 ├── Topology/
 │   └── TopologyManager.php  Exchange/queue/binding declaration
 └── Exception/

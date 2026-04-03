@@ -16,6 +16,7 @@ namespace PHPdot\Queue;
 use Closure;
 use PhpAmqpLib\Message\AMQPMessage;
 use PhpAmqpLib\Wire\AMQPTable;
+use PHPdot\Queue\Enum\TaskStatus;
 use PHPdot\Queue\Exception\ConsumeException;
 use PHPdot\Queue\Topology\TopologyManager;
 use Psr\Log\LoggerInterface;

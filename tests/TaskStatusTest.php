@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PHPdot\Queue\Tests;
 
-use PHPdot\Queue\TaskStatus;
+use PHPdot\Queue\Enum\TaskStatus;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

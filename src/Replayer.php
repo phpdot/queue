@@ -16,6 +16,8 @@ namespace PHPdot\Queue;
 
 use Closure;
 use PhpAmqpLib\Message\AMQPMessage;
+use PHPdot\Queue\Enum\ReplayAction;
+use PHPdot\Queue\Result\ReplayResult;
 use PHPdot\Queue\Topology\TopologyManager;
 use Psr\Log\LoggerInterface;
 use Throwable;
