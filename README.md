@@ -90,7 +90,7 @@ $conn->message(json_encode($data))
 |---|---|
 | `message_id` | UUIDv7 |
 | `timestamp` | `time()` |
-| `app_id` | `gethostname()` |
+| `app_id` | Not set (use `->appId()` to set) |
 | `content_type` | Auto-detected (JSON or text) |
 | `delivery_mode` | 2 (persistent) |
 
@@ -158,7 +158,7 @@ Enable in config:
 'queues' => [
     'orders.process' => [
         'bindings' => [['exchange' => 'orders', 'routing_key' => 'order.created']],
-        'retry' => ['enable' => true, 'delay' => 500],
+        'retry' => ['enable' => true, 'delay_ms' => 500],
         'dead' => 'dead-letters',
         'durable' => true,
     ],
@@ -239,7 +239,7 @@ $config = new ConnectionConfig(
                 ['exchange' => 'orders', 'routing_key' => 'order.created'],
                 ['exchange' => 'orders', 'routing_key' => 'order.updated'],
             ],
-            'retry' => ['enable' => true, 'delay' => 500],
+            'retry' => ['enable' => true, 'delay_ms' => 500],
             'dead' => 'dead',
             'durable' => true,
         ],
