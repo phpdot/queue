@@ -556,4 +556,109 @@ final class ConsumerTest extends TestCase
 
         self::assertSame('specific body content', $receivedBody);
     }
+
+    #[Test]
+    public function corruptCompressedMessageIsDeadLetteredNotCrashed(): void
+    {
+        [$consumer, $channel, $connection] = $this->createConsumerWithDeadLetter('test.queue');
+        $handler = null;
+
+        $channel->method('basic_consume')
+            ->willReturnCallback(function ($queue, $tag, $noLocal, $noAck, $exclusive, $nowait, $callback) use (&$handler): string {
+                $handler = $callback;
+                return 'tag';
+            });
+
+        $callCount = 0;
+        $channel->method('is_consuming')
+            ->willReturnCallback(function () use (&$callCount): bool {
+                $callCount++;
+                return $callCount <= 1;
+            });
+
+        $channel->method('wait')
+            ->willReturnCallback(function () use (&$handler): void {
+                if ($handler !== null) {
+                    $corruptMsg = new AMQPMessage('not-valid-base64-gzip-data', [
+                        'content_encoding' => 'gzip',
+                        'message_id' => 'corrupt-msg',
+                    ]);
+                    $corruptMsg->setChannel($this->createMockChannel());
+                    $corruptMsg->setDeliveryInfo('tag-corrupt', false, 'test-exchange', 'test.key');
+                    $handler($corruptMsg);
+                    $handler = null;
+                }
+            });
+
+        $published = false;
+        $channel->method('basic_publish')
+            ->willReturnCallback(function () use (&$published): void {
+                $published = true;
+            });
+
+        $consumer->execute(function (Message $msg): TaskStatus {
+            return TaskStatus::SUCCESS;
+        });
+
+        self::assertTrue($published, 'Corrupt compressed message should be dead-lettered, not crash the consumer');
+    }
+
+    /**
+     * @return array{Consumer, AMQPChannel&\PHPUnit\Framework\MockObject\MockObject, Connection}
+     */
+    private function createConsumerWithDeadLetter(string $queue): array
+    {
+        $channel = $this->createMock(AMQPChannel::class);
+
+        $connection = new Connection(new ConnectionConfig(
+            exchanges: [
+                'test' => ['type' => 'direct'],
+                'dead' => ['type' => 'direct'],
+            ],
+            queues: [
+                $queue => [
+                    'bindings' => [['exchange' => 'test', 'routing_key' => 'key']],
+                    'dead' => 'dead',
+                ],
+            ],
+        ));
+
+        $reflection = new ReflectionClass($connection);
+
+        $connProp = $reflection->getProperty('connection');
+        $mockConn = $this->createMock(AMQPStreamConnection::class);
+        $mockConn->method('isConnected')->willReturn(true);
+        $connProp->setValue($connection, $mockConn);
+
+        $chanProp = $reflection->getProperty('channel');
+        $chanProp->setValue($connection, $channel);
+
+        $connectedProp = $reflection->getProperty('connected');
+        $connectedProp->setValue($connection, true);
+
+        $topology = new TopologyManager(new ConnectionConfig(
+            exchanges: [
+                'test' => ['type' => 'direct'],
+                'dead' => ['type' => 'direct'],
+            ],
+            queues: [
+                $queue => [
+                    'bindings' => [['exchange' => 'test', 'routing_key' => 'key']],
+                    'dead' => 'dead',
+                ],
+            ],
+        ));
+
+        $consumer = new Consumer($queue, $connection, $topology, new NullLogger());
+
+        return [$consumer, $channel, $connection];
+    }
+
+    private function createMockChannel(): AMQPChannel
+    {
+        $mock = $this->createMock(AMQPChannel::class);
+        $mock->method('basic_ack')->willReturn(null);
+
+        return $mock;
+    }
 }

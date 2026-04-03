@@ -142,13 +142,19 @@ final class Consumer
                     $decoded = base64_decode($body, true);
 
                     if ($decoded === false) {
-                        throw ConsumeException::decompressFailed();
+                        $message = Message::fromAMQP($amqpMsg, $this->queue);
+                        $this->handleDead($amqpMsg, $message, 'Failed to decode compressed message body');
+
+                        return;
                     }
 
                     $decompressed = gzuncompress($decoded);
 
                     if ($decompressed === false) {
-                        throw ConsumeException::decompressFailed();
+                        $message = Message::fromAMQP($amqpMsg, $this->queue);
+                        $this->handleDead($amqpMsg, $message, 'Failed to decompress message body');
+
+                        return;
                     }
 
                     $amqpMsg->setBody($decompressed);
@@ -163,8 +169,6 @@ final class Consumer
                 TaskStatus::RETRY => $this->handleRetry($amqpMsg, $message),
                 TaskStatus::DEAD => $this->handleDead($amqpMsg, $message, 'Marked as dead by handler'),
             };
-        } catch (ConsumeException $e) {
-            throw $e;
         } catch (Throwable $e) {
             $this->logger->error('Consumer error', [
                 'queue' => $this->queue,
@@ -275,6 +279,11 @@ final class Consumer
         $contentType = $amqpMsg->has('content_type') ? $amqpMsg->get('content_type') : null;
         if (is_string($contentType)) {
             $properties['content_type'] = $contentType;
+        }
+
+        $contentEncoding = $amqpMsg->has('content_encoding') ? $amqpMsg->get('content_encoding') : null;
+        if (is_string($contentEncoding)) {
+            $properties['content_encoding'] = $contentEncoding;
         }
 
         if ($message->messageId() !== '') {
