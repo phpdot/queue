@@ -139,17 +139,11 @@ Unhandled exceptions are caught and dead-lettered automatically. The consumer ne
 
 ### Retry Flow
 
-```
-orders.queue
-    │ nack
-    ▼
-orders.queue.retry.exchange
-    │
-    ▼
-orders.queue.retry (TTL queue, e.g. 500ms)
-    │ TTL expires
-    ▼
-orders.queue (message redelivered, retry count incremented)
+```mermaid
+graph TD
+    A[orders.queue] -->|nack| B[orders.queue.retry.exchange]
+    B --> C["orders.queue.retry<br/>(TTL queue, e.g. 500ms)"]
+    C -->|TTL expires| A
 ```
 
 Enable in config:
@@ -174,6 +168,44 @@ When max retries exceeded or `TaskStatus::DEAD` returned, the message is forward
 - `x-failed-queue` — original queue name
 - `x-failed-reason` — failure description
 - `x-failed-timestamp` — Unix timestamp
+
+### Replay
+
+After fixing a bug, replay dead-lettered messages back to their original queue. Same callback pattern as consuming — return an enum, the library handles the rest.
+
+```php
+use PHPdot\Queue\ReplayAction;
+
+$result = $conn->replay('orders.dead')
+    ->limit(100)
+    ->execute(function (Message $msg): ReplayAction {
+        echo "[{$msg->messageId()}] {$msg->failedReason()}\n";
+
+        // Bad payload — clean up DB and discard permanently
+        if ($msg->failedReason() === 'Invalid payload') {
+            Order::where('message_id', $msg->messageId())->delete();
+            return ReplayAction::REMOVE;
+        }
+
+        // Timeout errors — bug is fixed, send it back
+        if (str_contains($msg->failedReason(), 'timeout')) {
+            return ReplayAction::REPLAY;
+        }
+
+        // Unknown — leave in DLQ for investigation
+        return ReplayAction::SKIP;
+    });
+
+echo "Replayed: {$result->replayed}, Removed: {$result->removed}, Skipped: {$result->skipped}\n";
+```
+
+Three actions per message:
+
+- **REPLAY** — ack + republish to original exchange with original message ID. Dead-letter metadata stripped, retry counter reset.
+- **REMOVE** — ack + discard permanently. Use the callback to clean up related data before it's gone.
+- **SKIP** — nack with requeue. Message stays in DLQ for later.
+
+Uses `basic_get` (pull mode) — processes available messages and stops. No infinite loop.
 
 ---
 
@@ -286,8 +318,11 @@ src/
 ├── Connection.php          Main entry point
 ├── Publisher.php            Fluent message builder
 ├── Consumer.php             Message consumer with retry/dead letter
+├── Replayer.php             Dead letter queue replay
 ├── Message.php              Immutable inbound message DTO
 ├── TaskStatus.php           SUCCESS, RETRY, DEAD
+├── ReplayAction.php         REPLAY, REMOVE, SKIP
+├── ReplayResult.php         Replay outcome counts
 ├── Config/
 │   └── ConnectionConfig.php Connection and topology configuration
 ├── Topology/
