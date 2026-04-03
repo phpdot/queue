@@ -186,7 +186,7 @@ final class Publisher
             $this->headers['x-original-routing-key'] = $routingKey;
 
             if ($this->compress) {
-                $compressed = gzcompress($body);
+                $compressed = gzcompress($body, 9);
 
                 if ($compressed === false) {
                     throw PublishException::compressionFailed();

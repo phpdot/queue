@@ -55,7 +55,7 @@ final class MessageTest extends TestCase
         $msg = new AMQPMessage('body');
         $message = Message::fromAMQP($msg, 'test-queue');
 
-        self::assertNull($message->header('nonexistent'));
+        self::assertSame('', $message->header('nonexistent'));
         self::assertSame('fallback', $message->header('nonexistent', 'fallback'));
     }
 

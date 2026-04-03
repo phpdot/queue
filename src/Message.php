@@ -130,11 +130,17 @@ final class Message
      * Returns a single header value by key, or the default if not found.
      *
      * @param string $key The header key
-     * @param mixed $default The default value if the header is not set
+     * @param string $default The default value if the header is not set
      */
-    public function header(string $key, mixed $default = null): mixed
+    public function header(string $key, string $default = ''): string
     {
-        return $this->headers[$key] ?? $default;
+        $value = $this->headers[$key] ?? null;
+
+        if ($value === null) {
+            return $default;
+        }
+
+        return is_scalar($value) ? (string) $value : $default;
     }
 
     /**

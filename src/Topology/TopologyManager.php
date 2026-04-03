@@ -19,6 +19,8 @@ use PhpAmqpLib\Wire\AMQPTable;
 use PHPdot\Queue\Config\ConnectionConfig;
 use PHPdot\Queue\Exception\ConsumeException;
 use PHPdot\Queue\Exception\PublishException;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 final class TopologyManager
 {
@@ -32,9 +34,11 @@ final class TopologyManager
      * Creates a new topology manager.
      *
      * @param ConnectionConfig $config The connection configuration containing exchange and queue definitions
+     * @param LoggerInterface $logger The logger instance
      */
     public function __construct(
         private readonly ConnectionConfig $config,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {}
 
     /**
@@ -69,6 +73,8 @@ final class TopologyManager
         );
 
         $this->declaredExchanges[$exchange] = true;
+
+        $this->logger->debug('Exchange declared', ['exchange' => $exchange]);
 
         foreach ($this->config->queues as $queueName => $queueConfig) {
             $bindings = $queueConfig['bindings'] ?? [];

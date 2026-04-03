@@ -25,10 +25,10 @@ final class Consumer
 {
     private int $prefetchCount = 10;
 
-    /** @var Closure(Message): void|null */
+    /** @var Closure(Message, int): void|null */
     private ?Closure $onRetryCallback = null;
 
-    /** @var Closure(Message): void|null */
+    /** @var Closure(Message, string): void|null */
     private ?Closure $onDeadCallback = null;
 
     /**
@@ -68,7 +68,7 @@ final class Consumer
     /**
      * Registers a callback to invoke when a message is retried.
      *
-     * @param Closure(Message): void $callback The retry callback
+     * @param Closure(Message, int): void $callback The retry callback
      */
     public function onRetry(Closure $callback): self
     {
@@ -80,7 +80,7 @@ final class Consumer
     /**
      * Registers a callback to invoke when a message is sent to the dead letter queue.
      *
-     * @param Closure(Message): void $callback The dead letter callback
+     * @param Closure(Message, string): void $callback The dead letter callback
      */
     public function onDead(Closure $callback): self
     {
@@ -219,7 +219,7 @@ final class Consumer
         $amqpMsg->nack(false);
 
         if ($this->onRetryCallback !== null) {
-            ($this->onRetryCallback)($message);
+            ($this->onRetryCallback)($message, $retryCount + 1);
         }
 
         $this->logger->debug('Message nacked for retry', [
@@ -250,7 +250,7 @@ final class Consumer
             ]);
 
             if ($this->onDeadCallback !== null) {
-                ($this->onDeadCallback)($message);
+                ($this->onDeadCallback)($message, $reason);
             }
 
             return;
@@ -272,6 +272,11 @@ final class Consumer
             'application_headers' => $applicationHeaders,
         ];
 
+        $contentType = $amqpMsg->has('content_type') ? $amqpMsg->get('content_type') : null;
+        if (is_string($contentType)) {
+            $properties['content_type'] = $contentType;
+        }
+
         if ($message->messageId() !== '') {
             $properties['message_id'] = $message->messageId();
         }
@@ -280,7 +285,7 @@ final class Consumer
         $channel->basic_publish($deadMessage, $dlxExchange, $dlxRoutingKey !== '' ? $dlxRoutingKey : $this->queue);
 
         if ($this->onDeadCallback !== null) {
-            ($this->onDeadCallback)($message);
+            ($this->onDeadCallback)($message, $reason);
         }
 
         $this->logger->warning('Message sent to dead letter', [
@@ -313,6 +318,7 @@ final class Consumer
             return 0;
         }
 
+        $retryQueue = $this->queue . '.retry';
         $count = 0;
 
         foreach ($headers['x-death'] as $death) {
@@ -322,7 +328,7 @@ final class Consumer
 
             $deathQueue = $death['queue'] ?? '';
 
-            if ($deathQueue === $this->queue) {
+            if ($deathQueue === $this->queue || $deathQueue === $retryQueue) {
                 $deathCount = $death['count'] ?? 1;
                 $count += is_int($deathCount) ? $deathCount : (is_numeric($deathCount) ? intval($deathCount) : 1);
             }
