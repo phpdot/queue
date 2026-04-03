@@ -170,9 +170,8 @@ final class Publisher
             $msgProperties['timestamp'] = time();
             $msgProperties['delivery_mode'] = 2;
 
-            if ($this->appId !== '') {
-                $msgProperties['app_id'] = $this->appId;
-            }
+            $hostname = gethostname();
+            $msgProperties['app_id'] = $this->appId !== '' ? $this->appId : ($hostname !== false ? $hostname : 'unknown');
 
             if (!isset($msgProperties['content_type'])) {
                 $msgProperties['content_type'] = json_validate($body) ? 'application/json' : 'text/plain';

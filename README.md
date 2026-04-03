@@ -90,7 +90,7 @@ $conn->message(json_encode($data))
 |---|---|
 | `message_id` | UUIDv7 |
 | `timestamp` | `time()` |
-| `app_id` | Not set (use `->appId()` to set) |
+| `app_id` | `gethostname()` |
 | `content_type` | Auto-detected (JSON or text) |
 | `delivery_mode` | 2 (persistent) |
 
