@@ -218,6 +218,16 @@ final class Connection
     }
 
     /**
+     * Creates a new Replayer for the given dead letter queue.
+     *
+     * @param string $queue The dead letter queue name to replay from
+     */
+    public function replay(string $queue): Replayer
+    {
+        return new Replayer($queue, $this, $this->topology, $this->logger);
+    }
+
+    /**
      * Closes the connection on destruction.
      */
     public function __destruct()
