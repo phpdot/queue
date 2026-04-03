@@ -47,26 +47,22 @@ $conn->consume('tasks.process')
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────┐
-│                  Connection                      │
-│  Connect, reconnect, channel, topology           │
-├────────────────────┬────────────────────────────┤
-│                    │                            │
-│   ┌────────────────▼───┐   ┌───────────────────▼┐
-│   │    Publisher         │   │     Consumer        │
-│   │                      │   │                     │
-│   │  Fluent builder:     │   │  basic_consume loop │
-│   │  compress, trace,    │   │  with retry/dead    │
-│   │  priority, headers   │   │  letter handling    │
-│   └──────────────────────┘   └─────────────────────┘
-│                                                     │
-│   ┌─────────────────────────────────────────────┐   │
-│   │            Topology Manager                  │   │
-│   │  Declares exchanges, queues, bindings,       │   │
-│   │  retry queues — cached after first use       │   │
-│   └─────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph Connection
+        direction TB
+        CONN[Connect, reconnect, channel, topology]
+        subgraph Publishers & Consumers
+            direction LR
+            PUB[Publisher<br/><br/>Fluent builder:<br/>compress, trace,<br/>priority, headers]
+            CON[Consumer<br/><br/>basic_consume loop<br/>with retry/dead<br/>letter handling]
+        end
+        TOPO[Topology Manager<br/><br/>Declares exchanges, queues, bindings,<br/>retry queues — cached after first use]
+        CONN --> PUB
+        CONN --> CON
+        PUB --> TOPO
+        CON --> TOPO
+    end
 ```
 
 ---
